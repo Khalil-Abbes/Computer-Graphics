@@ -38,7 +38,6 @@ protected:
 
     bool intersect(int primitiveIndex, const Ray &ray, Intersection &its,
                    Sampler &rng) const override {
-        NOT_IMPLEMENTED
 
         // hints:
         // * use m_triangles[primitiveIndex] to get the vertex indices of the
@@ -48,6 +47,94 @@ protected:
         //   * make sure that your shading frame stays orthonormal!
         // * if m_smoothNormals is false, use the geometrical normal (can be
         // computed from the vertex positions)
+        const Vector3i tri = m_triangles[primitiveIndex];
+        const Vertex c1    = m_vertices[tri[0]];
+        const Vertex c2    = m_vertices[tri[1]];
+        const Vertex c3    = m_vertices[tri[2]];
+
+        const Vector d = ray.direction;
+        const Vector o = Vector(ray.origin);
+
+        const Vector edge1 = c2.position - c1.position;
+        const Vector edge2 = c3.position - c1.position;
+        const float detM   = edge1.dot(d.cross(edge2));
+
+        if (detM == 0) {
+            return false;
+        }
+        const float invDetM = 1 / detM;
+
+        const float detMu = (o - c1.position).dot(d.cross(edge2));
+        const float u     = detMu * invDetM;
+        if (u < 0 || u > 1) {
+            return false;
+        }
+
+        // Copied calculations from
+        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+        // float detMv = edge1.dot((o - c1.position).cross(edge2));
+        // TODO: Optimize these, some double calculations
+        const float detMv = d.dot((o - c1.position).cross(edge1));
+        const float v     = detMv * invDetM;
+        if (v < 0 || u + v > 1) {
+            return false;
+        }
+
+        // Copied calculations from
+        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+        // float detMt = edge1.dot(d.cross(o - c1.position));
+        // TODO: Optimize these, some double calculations
+        const float detMt = edge2.dot((o - c1.position).cross(edge1));
+
+        const float t = detMt * invDetM;
+
+        // note that we never report an intersection closer than Epsilon (to
+        // avoid self-intersections)! we also do not update the intersection if
+        // a closer intersection already exists (i.e., its.t is lower than our
+        // own t)
+        if (t < Epsilon || t > its.t)
+            return false;
+
+        // compute the hitpoint
+        const Point position = ray(t);
+
+        // we have determined there was an intersection! we are now free to
+        // change the intersection object and return true.
+        its.t = t;
+
+        // TODO: Maybe move this into inline populate function?
+
+        its.position = position;
+
+        // compute the shading frame, texture coordinates
+        // and area pdf? (same as sampleArea)
+
+        // map the position from [-1,-1,0]..[+1,+1,0] to [0,0]..[1,1] by
+        // discarding the z component and rescaling
+        // surf.uv.x() = (position.x() + 1) / 2;
+        // surf.uv.y() = (position.y() + 1) / 2;
+
+        // TODO: Implement this
+        // surf.tangent = Vector(position);
+
+        its.geometryNormal = (c2.position - c1.position)
+                                 .cross(c3.position - c1.position)
+                                 .normalized();
+
+        if (m_smoothNormals) {
+            // The order is slightly different from the one on slides I think
+            its.shadingNormal =
+                Vertex::interpolate({ u, v }, c1, c2, c3).normal.normalized();
+        }
+
+        else {
+            its.shadingNormal = its.geometryNormal;
+        }
+
+        // TODO: not implemented
+        its.pdf = 1.0f;
+
+        return true;
     }
 
     float transmittance(int primitiveIndex, const Ray &ray, float tMax,
@@ -57,11 +144,32 @@ protected:
     }
 
     Bounds getBoundingBox(int primitiveIndex) const override {
-        NOT_IMPLEMENTED
+        const Vector3i tri = m_triangles[primitiveIndex];
+        const Vertex c1    = m_vertices[tri[0]];
+        const Vertex c2    = m_vertices[tri[1]];
+        const Vertex c3    = m_vertices[tri[2]];
+
+        return Bounds(
+            Point{
+                std::min({ c1.position.x(), c2.position.x(), c3.position.x() }),
+                std::min({ c1.position.y(), c2.position.y(), c3.position.y() }),
+                std::min(
+                    { c1.position.z(), c2.position.z(), c3.position.z() }) },
+            Point{
+                std::max({ c1.position.x(), c2.position.x(), c3.position.x() }),
+                std::max({ c1.position.y(), c2.position.y(), c3.position.y() }),
+                std::max(
+                    { c1.position.z(), c2.position.z(), c3.position.z() }) });
     }
 
     Point getCentroid(int primitiveIndex) const override {
-        NOT_IMPLEMENTED
+        const Vector3i tri = m_triangles[primitiveIndex];
+        const Vertex c1    = m_vertices[tri[0]];
+        const Vertex c2    = m_vertices[tri[1]];
+        const Vertex c3    = m_vertices[tri[2]];
+        return (Vector(c1.position) + Vector(c2.position) +
+                Vector(c3.position)) /
+               3;
     }
 
 public:
@@ -83,7 +191,8 @@ public:
     }
 
     AreaSample sampleArea(Sampler &rng) const override{
-        // only implement this if you need triangle mesh area light sampling for
+        // only implement this if you need triangle mesh
+        // area light sampling for
         // your rendering competition
         NOT_IMPLEMENTED
     }
