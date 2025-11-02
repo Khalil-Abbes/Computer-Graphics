@@ -233,57 +233,103 @@ class AccelerationStructure : public Shape {
      */
     void binning(const Node &node, int &bestSplitAxis,
                  float &bestSplitPosition) {
-        // TODO: Optimize this as it's super inefficient
         const int num_bins  = 16;
         int best_axis       = -1;
         float best_position = -1;
         float best_sah      = surfaceArea(node.aabb) * node.primitiveCount;
-        float current_sah, current_position, cost_left, cost_right;
+        float current_sah;
 
-        const int num_axes = node.aabb.min().Dimension;
-        float per_bin_add;
-        Bounds left_split, right_split;
+        // For each bin we would like to store:
+        // split position (ending point)
+        // bounds
+        // num_children
+        // The index of the bin of each child can be calculated as
+        // (getCentroid(m_primitiveIndices[i])[current_axis] - start_of_axis) /
+        // bin_width We can then floor this value and clip it to [0,num_bins -
+        // 1]
 
-        for (int current_axis = 0; current_axis < num_axes; ++current_axis) {
-            per_bin_add =
+        struct bin_info {
+            float split_position;
+            Bounds bounds;
+            int num_children;
+        };
+
+        std::array<bin_info, num_bins> bin_details;
+
+        float bin_width;
+        float start_of_axis;
+        int calculated_bin;
+        NodeIndex first_primitive = node.firstPrimitiveIndex();
+
+        Bounds left_bounds, right_bounds;
+        int left_count, right_count;
+        double left_surface_area, right_surface_area;
+
+        for (int current_axis = 0; current_axis < node.aabb.min().Dimension;
+             ++current_axis) {
+
+            // We cannot split along an exis that has 0 extent
+            if (node.aabb.diagonal()[current_axis] < Epsilon) {
+                continue;
+            }
+
+            bin_width =
                 (node.aabb.max() - node.aabb.min())[current_axis] / num_bins;
-            for (int current_bin = 1; current_bin < num_bins; ++current_bin) {
-                current_position =
-                    node.aabb.min()[current_axis] + current_bin * per_bin_add;
-                cost_left  = 0;
-                cost_right = 0;
+            start_of_axis = node.aabb.min()[current_axis];
+            for (int current_bin = 0; current_bin < num_bins; ++current_bin) {
+                bin_details[current_bin] = {
+                    start_of_axis + (current_bin + 1) * bin_width, Bounds(), 0
+                };
+            }
 
-                left_split  = Bounds();
-                right_split = Bounds();
+            for (int i = 0; i < node.primitiveCount; ++i) {
+                auto current_primitive =
+                    m_primitiveIndices[first_primitive + i];
+                calculated_bin = std::clamp(
+                    int(std::floor(
+                        (getCentroid(current_primitive)[current_axis] -
+                         start_of_axis) /
+                        bin_width)),
+                    0,
+                    num_bins - 1);
+                bin_details[calculated_bin].bounds.extend(
+                    getBoundingBox(current_primitive));
+                ++bin_details[calculated_bin].num_children;
+            }
 
-                auto first_primitive = node.firstPrimitiveIndex();
+            left_bounds = Bounds();
+            left_count  = 0;
 
-                for (int i = 0; i < node.primitiveCount; ++i) {
-                    if (getCentroid(m_primitiveIndices[first_primitive +
-                                                       i])[current_axis] <
-                        current_position) {
-                        ++cost_left;
-                        left_split.extend(getBoundingBox(
-                            m_primitiveIndices[first_primitive + i]));
-                    } else {
-                        ++cost_right;
-                        right_split.extend(getBoundingBox(
-                            m_primitiveIndices[first_primitive + i]));
-                    }
+            for (int i = 0; i < num_bins - 1; ++i) {
+                left_bounds.extend(bin_details[i].bounds);
+                left_count += bin_details[i].num_children;
+
+                right_bounds = Bounds();
+                right_count  = 0;
+
+                // TODO: This can further be reduced from O(bin^2) to O(bin)
+                for (int j = i + 1; j < num_bins; ++j) {
+                    right_bounds.extend(bin_details[j].bounds);
+                    right_count += bin_details[j].num_children;
                 }
 
-                auto surface_area_left =
-                    left_split.isEmpty() ? 0.0 : surfaceArea(left_split);
-                auto surface_area_right =
-                    right_split.isEmpty() ? 0.0 : surfaceArea(right_split);
+                if (left_count == 0 || right_count == 0) {
+                    continue;
+                }
 
-                current_sah = surface_area_left * cost_left +
-                              surface_area_right * cost_right;
+                // Shouldn't happen with the above check but doesn't hurt to be
+                // careful I guess
+                left_surface_area =
+                    left_bounds.isEmpty() ? 0.0 : surfaceArea(left_bounds);
+                right_surface_area =
+                    right_bounds.isEmpty() ? 0.0 : surfaceArea(right_bounds);
+                current_sah = left_surface_area * left_count +
+                              right_surface_area * right_count;
 
                 if (current_sah < best_sah) {
                     best_sah      = current_sah;
                     best_axis     = current_axis;
-                    best_position = current_position;
+                    best_position = bin_details[i].split_position;
                 }
             }
         }
