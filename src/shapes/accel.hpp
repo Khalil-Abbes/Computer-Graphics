@@ -233,7 +233,63 @@ class AccelerationStructure : public Shape {
      */
     void binning(const Node &node, int &bestSplitAxis,
                  float &bestSplitPosition) {
-        NOT_IMPLEMENTED
+        // TODO: Optimize this as it's super inefficient
+        const int num_bins  = 16;
+        int best_axis       = -1;
+        float best_position = -1;
+        float best_sah      = surfaceArea(node.aabb) * node.primitiveCount;
+        float current_sah, current_position, cost_left, cost_right;
+
+        const int num_axes = node.aabb.min().Dimension;
+        float per_bin_add;
+        Bounds left_split, right_split;
+
+        for (int current_axis = 0; current_axis < num_axes; ++current_axis) {
+            per_bin_add =
+                (node.aabb.max() - node.aabb.min())[current_axis] / num_bins;
+            for (int current_bin = 1; current_bin < num_bins; ++current_bin) {
+                current_position =
+                    node.aabb.min()[current_axis] + current_bin * per_bin_add;
+                cost_left  = 0;
+                cost_right = 0;
+
+                left_split  = Bounds();
+                right_split = Bounds();
+
+                auto first_primitive = node.firstPrimitiveIndex();
+
+                for (int i = 0; i < node.primitiveCount; ++i) {
+                    if (getCentroid(m_primitiveIndices[first_primitive +
+                                                       i])[current_axis] <
+                        current_position) {
+                        ++cost_left;
+                        left_split.extend(getBoundingBox(
+                            m_primitiveIndices[first_primitive + i]));
+                    } else {
+                        ++cost_right;
+                        right_split.extend(getBoundingBox(
+                            m_primitiveIndices[first_primitive + i]));
+                    }
+                }
+
+                auto surface_area_left =
+                    left_split.isEmpty() ? 0.0 : surfaceArea(left_split);
+                auto surface_area_right =
+                    right_split.isEmpty() ? 0.0 : surfaceArea(right_split);
+
+                current_sah = surface_area_left * cost_left +
+                              surface_area_right * cost_right;
+
+                if (current_sah < best_sah) {
+                    best_sah      = current_sah;
+                    best_axis     = current_axis;
+                    best_position = current_position;
+                }
+            }
+        }
+
+        bestSplitAxis     = best_axis;
+        bestSplitPosition = best_position;
     }
 
     /// @brief Attempts to subdivide a given BVH node.
@@ -244,7 +300,7 @@ class AccelerationStructure : public Shape {
         }
 
         // set to true when implementing binning
-        static constexpr bool UseSAH = false;
+        static constexpr bool UseSAH = true;
 
         int splitAxis = -1;
         float splitPosition;
