@@ -29,6 +29,13 @@ public:
 
         // TODO: not implemented
         surf.pdf = 1.0f;
+
+        // Copied from Khalil's implementation
+        // TODO: Come back to this and implement properly
+        // TODO: Doesn't seem to be covered by tests so not sure if correct
+        Vector up    = abs(surf.geometryNormal.z()) < 0.999f ? Vector(0, 0, 1)
+                                                             : Vector(1, 0, 0);
+        surf.tangent = up.cross(surf.geometryNormal).normalized();
     }
 
     bool intersect(const Ray &ray, Intersection &its,
@@ -84,6 +91,10 @@ public:
         // change the intersection object and return true.
 
         its.t = t1;
+
+        // TODO: Doesn't seem to be covered by tests so not sure if correct
+        its.wo = -ray.direction;
+
         populate(its,
                  position); // compute the shading frame, texture coordinates
                             // and area pdf? (same as sampleArea)

@@ -65,6 +65,10 @@ public:
         // we have determined there was an intersection! we are now free to
         // change the intersection object and return true.
         its.t = t;
+
+        // TODO: Doesn't seem to be covered by tests so not sure if correct
+        its.wo = -ray.direction;
+
         populate(its,
                  position); // compute the shading frame, texture coordinates
                             // and area pdf (same as sampleArea)

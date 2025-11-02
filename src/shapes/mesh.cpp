@@ -59,7 +59,7 @@ protected:
         const Vector edge2 = c3.position - c1.position;
         const float detM   = edge1.dot(d.cross(edge2));
 
-        if (detM == 0) {
+        if (fabs(detM) < 1.0e-6) {
             return false;
         }
         const float invDetM = 1 / detM;
@@ -130,6 +130,24 @@ protected:
         else {
             its.shadingNormal = its.geometryNormal;
         }
+
+        // Copied from Khalil's implementation
+        // TODO: Come back to this and implement properly
+        // TODO: Doesn't seem to be covered by tests so not sure if correct
+        Vector dpAB  = Vector(c2.position - c1.position);
+        Vector dpAC  = Vector(c3.position - c1.position);
+        Vector2 uvAB = c2.uv - c1.uv;
+        Vector2 uvAC = c3.uv - c1.uv;
+        float uvDet  = uvAB.x() * uvAC.y() - uvAB.y() * uvAC.x();
+        if (fabs(uvDet) > 1e-10f) {
+            float tangentScale = 1.0f / uvDet;
+            Vector tangentDir =
+                (dpAB * uvAC.y() - dpAC * uvAB.y()) * tangentScale;
+            its.tangent = tangentDir.normalized();
+        }
+
+        // TODO: Doesn't seem to be covered by tests so not sure if correct
+        its.wo = -ray.direction;
 
         // TODO: not implemented
         its.pdf = 1.0f;
