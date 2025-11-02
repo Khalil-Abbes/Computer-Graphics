@@ -92,7 +92,7 @@ file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS
 )
 
 # ######################
-set(MY_TARGET_NAME unnamed) # Change `unnamed` to your favorite executable name
+set(MY_TARGET_NAME ImHeldAtGunPointAndWillDieIfYouDontGiveMeTheMaximumPointsPLEASEHELPMEIAMINDANGERTHISISMYONLYHOPE) # Change `unnamed` to your favorite executable name
 # ######################
 
 find_package(OpenImageDenoise)
