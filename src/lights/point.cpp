@@ -3,13 +3,34 @@
 namespace lightwave {
 
 class PointLight final : public Light {
+    // member variables to store position and power
+    Point m_position;
+    Color m_power;
+
 public:
     PointLight(const Properties &properties) : Light(properties) {
+        // Extract position and power from properties
+        m_position = properties.get<Point>("position");
+        m_power    = properties.get<Color>("power");
     }
 
     DirectLightSample sampleDirect(const Point &origin,
                                    Sampler &rng) const override {
-        NOT_IMPLEMENTED
+        // 1. Compute vector from surface point to light
+        Vector toLight = m_position - origin;
+
+        // 2. Compute distance to light
+        float distance = toLight.length();
+
+        // 3. Normalize to get direction toward light
+        Vector wi = toLight / distance;
+
+        // 4. Convert power to intensity with inverse square falloff
+        // Power spreads over sphere of area 4π*r²
+        Color weight = m_power / (FourPi * distance * distance);
+
+        // 5. Return the light sample
+        return { .wi = wi, .weight = weight, .distance = distance };
     }
 
     bool canBeIntersected() const override { return false; }
@@ -17,7 +38,11 @@ public:
     std::string toString() const override {
         return tfm::format(
             "PointLight[\n"
-            "]");
+            "  position = %s,\n"
+            "  power = %s\n"
+            "]",
+            m_position,
+            m_power);
     }
 };
 
