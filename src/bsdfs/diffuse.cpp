@@ -26,7 +26,24 @@ public:
     }
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
-                      Sampler &rng) const override{ NOT_IMPLEMENTED }
+                      Sampler &rng) const override {
+        // Check if wo is in upper hemisphere
+        if (Frame::cosTheta(wo) <= 0) {
+            return BsdfSample::invalid();
+        }
+
+        // Sample a cosine-weighted direction in local coordinates
+        Vector wi = squareToCosineHemisphere(rng.next2D());
+
+        // Get the albedo color
+        Color albedo = m_albedo->evaluate(uv);
+
+        // With cosine-weighted sampling, the weight simplifies to just albedo
+        // Because: weight = (albedo/π * cos(θ)) / (cos(θ)/π) = albedo
+        Color weight = albedo;
+
+        return { .wi = wi, .weight = weight };
+    }
 
     std::string toString() const override {
         return tfm::format(

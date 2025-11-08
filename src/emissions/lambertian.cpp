@@ -11,7 +11,12 @@ public:
     }
 
     EmissionEval evaluate(const Point2 &uv, const Vector &wo) const override {
-        NOT_IMPLEMENTED
+        // Only emit light above the surface (local +z hemisphere)
+        if (Frame::cosTheta(wo) <= 0) {
+            return EmissionEval::invalid();
+        }
+        Color value = m_emission->evaluate(uv); // texture sampling
+        return EmissionEval{ .value = value };
     }
 
     std::string toString() const override {

@@ -22,7 +22,7 @@ public:
 
         // Return sample with constant intensity and infinite distance
         return {
-            .wi       = wi,
+            .wi       = wi.normalized(),
             .weight   = m_intensity,
             .distance = Infinity // Light is at infinity
         };
