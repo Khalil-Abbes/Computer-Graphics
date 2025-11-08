@@ -31,7 +31,7 @@ public:
                 lightSample.light->sampleDirect(its.position, rng);
             if (directSample) {
                 // Shadow ray
-                Point shadowOrigin = its.position + 1e-10f * directSample.wi;
+                Point shadowOrigin = its.position + Epsilon * directSample.wi;
                 Ray shadowRay(shadowOrigin, directSample.wi);
                 Intersection shadowIts = m_scene->intersect(shadowRay, rng);
                 bool occluded          = false;
@@ -56,7 +56,7 @@ public:
         // surfaces (NOT for specular/delta BSDFs)
         BsdfSample bsdfSample = its.sampleBsdf(rng);
         if (bsdfSample) {
-            Point newOrigin = its.position + 1e-10f * bsdfSample.wi;
+            Point newOrigin = its.position + Epsilon * bsdfSample.wi;
             Ray bounceRay(newOrigin, bsdfSample.wi);
             Intersection bounceIts = m_scene->intersect(bounceRay, rng);
 
