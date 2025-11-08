@@ -12,25 +12,22 @@ public:
 
     BsdfEval evaluate(const Point2 &uv, const Vector &wo,
                       const Vector &wi) const override {
-        // Check if wi is below the surface
-        if (Frame::cosTheta(wi) <= 0) {
-            return BsdfEval::invalid();
-        }
-
         // Sample the albedo color from the texture
         Color albedo = m_albedo->evaluate(uv);
 
-        // Return: cos(theta) * BRDF = cos(theta) * (albedo / pi)
-        Color value = Frame::absCosTheta(wi) * albedo * InvPi;
+        // The cosine term naturally filters the hemisphere:
+        // - Positive for wi above surface (correct)
+        // - Negative for wi below surface (gets clamped to zero)
+        Color value = Frame::cosTheta(wi) * albedo * InvPi;
         return { .value = value };
     }
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
                       Sampler &rng) const override {
         // Check if wo is in upper hemisphere
-        if (Frame::cosTheta(wo) <= 0) {
-            return BsdfSample::invalid();
-        }
+        // if (Frame::cosTheta(wo) < 0) {
+        //      return BsdfSample::invalid();
+        //  }
 
         // Sample a cosine-weighted direction in local coordinates
         Vector wi = squareToCosineHemisphere(rng.next2D());
