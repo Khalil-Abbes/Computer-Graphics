@@ -24,10 +24,6 @@ public:
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
                       Sampler &rng) const override {
-        // Check if wo is in upper hemisphere
-        // if (Frame::cosTheta(wo) < 0) {
-        //      return BsdfSample::invalid();
-        //  }
 
         // Sample a cosine-weighted direction in local coordinates
         Vector wi = squareToCosineHemisphere(rng.next2D());
