@@ -146,10 +146,7 @@ protected:
             its.tangent = tangentDir.normalized();
         }
 
-        // TODO: Doesn't seem to be covered by tests so not sure if correct
-        its.wo = -ray.direction;
-
-        // TODO: not implemented
+               // TODO: not implemented
         its.pdf = 1.0f;
 
         return true;

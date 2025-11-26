@@ -4,6 +4,7 @@ namespace lightwave {
 class Sphere : public Shape {
 public:
     Sphere(const Properties &properties) {}
+
     /**
      * @brief Constructs a surface event for a given position, used by @ref
      * intersect to populate the @ref Intersection and by @ref sampleArea to
@@ -16,13 +17,20 @@ public:
     inline void populate(SurfaceEvent &surf, const Point &position) const {
         surf.position = position;
 
-        // map the position from [-1,-1,0]..[+1,+1,0] to [0,0]..[1,1] by
-        // discarding the z component and rescaling
-        // surf.uv.x() = (position.x() + 1) / 2;
-        // surf.uv.y() = (position.y() + 1) / 2;
+        // Calculate UV coordinates using spherical mapping
+        Vector localPoint =
+            Vector(position).normalized(); // Already on unit sphere
 
-        // TODO: Implement this
-        // surf.tangent = Vector(position);
+        // Spherical coordinates: theta (azimuthal), phi (polar)
+        float theta =
+            atan2(localPoint.z(), localPoint.x()); // angle around Y-axis
+        float phi =
+            acos(clamp(localPoint.y(), -1.0f, 1.0f)); // angle from north pole
+
+        // Map to [0,1] range
+        surf.uv.x() =
+            1.0f - (theta + Pi) / (2 * Pi); // wrap theta from [-π,π] to [0,1]
+        surf.uv.y() = phi / Pi;             // map phi from [0,π] to [0,1]
 
         surf.geometryNormal = Vector(position).normalized();
         surf.shadingNormal  = Vector(position).normalized();
@@ -30,24 +38,21 @@ public:
         // TODO: not implemented
         surf.pdf = 1.0f;
 
-        // Copied from Khalil's implementation
-        // TODO: Come back to this and implement properly
-        // TODO: Doesn't seem to be covered by tests so not sure if correct
-        Vector up    = abs(surf.geometryNormal.z()) < 0.999f ? Vector(0, 0, 1)
-                                                             : Vector(1, 0, 0);
-        surf.tangent = up.cross(surf.geometryNormal).normalized();
+        // Set tangent to (1, 0, 0) as requested
+        surf.tangent = Vector(1, 0, 0);
     }
 
     bool intersect(const Ray &ray, Intersection &its,
                    Sampler &rng) const override {
         PROFILE("Sphere")
-        const float r = 1.0;
-        const Vector c{ 0.f, 0.f, 0.f };
 
-        const float quad_a = ray.direction.dot(ray.direction);
+        // Simplified: quad_a is always 1 since ray.direction is normalized
         const float quad_b = 2 * Vector(ray.origin).dot(ray.direction);
-        const float quad_c = Vector(ray.origin).dot(Vector(ray.origin)) - r * r;
-        const float disc   = quad_b * quad_b - 4 * quad_a * quad_c;
+
+        // Simplified: use lengthSquared() directly
+        const float quad_c = Vector(ray.origin).lengthSquared() - 1.f;
+
+        const float disc = quad_b * quad_b - 4 * quad_c;
 
         if (disc < 0) {
             return false;
@@ -57,8 +62,10 @@ public:
 
         const float sqrt_disc = sqrt(disc);
 
-        t1 = (-quad_b + sqrt_disc) / (2 * quad_a);
-        t2 = (-quad_b - sqrt_disc) / (2 * quad_a);
+        // Simplified: multiply by 0.5 instead of dividing by 2*quad_a (which
+        // was 2)
+        t1 = (-quad_b + sqrt_disc) * 0.5f;
+        t2 = (-quad_b - sqrt_disc) * 0.5f;
 
         // TODO: This is a mess
         bool t2_valid = true;
@@ -73,9 +80,7 @@ public:
                 // Both invalid matches
                 return false;
             }
-        }
-
-        else {
+        } else {
             if (t2_valid) {
                 // Both valid matches
                 if (t2 < t1) {
@@ -92,8 +97,7 @@ public:
 
         its.t = t1;
 
-        // TODO: Doesn't seem to be covered by tests so not sure if correct
-        its.wo = -ray.direction;
+        // Line 97 removed: Don't overwrite its.wo
 
         populate(its,
                  position); // compute the shading frame, texture coordinates

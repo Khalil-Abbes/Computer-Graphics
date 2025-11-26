@@ -12,65 +12,59 @@ public:
 
         // 1. Return environment/background if no hit.
         if (!its) {
-            EmissionEval emission = its.evaluateEmission();
-            return emission.value;
+            return its.evaluateEmission().value;
         }
 
         Color result(0);
 
         // 2. Add emission if the hit surface is emissive (area lights etc.)
-        EmissionEval emission = its.evaluateEmission();
-        if (emission) {
-            result += emission.value;
-        }
+        // No need to check if (emission) - value will be zero if not emissive
+        result += its.evaluateEmission().value;
 
         // 3. Sample a random non-intersectable (delta) light
         LightSample lightSample = m_scene->sampleLight(rng);
-        if (lightSample.light) {
+        // Use boolean operator instead of checking .light pointer
+        if (lightSample) {
             DirectLightSample directSample =
                 lightSample.light->sampleDirect(its.position, rng);
             if (directSample) {
-                // Shadow ray
-                Point shadowOrigin = its.position + Epsilon * directSample.wi;
-                Ray shadowRay(shadowOrigin, directSample.wi);
-                Intersection shadowIts = m_scene->intersect(shadowRay, rng);
-                bool occluded          = false;
-                if (shadowIts) {
-                    if (std::isinf(directSample.distance) ||
-                        shadowIts.t < directSample.distance - Epsilon) {
-                        occluded = true;
-                    }
-                }
-                if (!occluded) {
+                // Shadow ray - NO Epsilon offset needed
+                Ray shadowRay(its.position, directSample.wi);
+
+                // Use transmittance instead of intersect for shadow rays
+                // This handles self-intersection prevention internally
+                // transmittance returns a float, not Color
+                float transmittance = m_scene->transmittance(
+                    shadowRay, directSample.distance, rng);
+
+                // If transmittance is non-zero, the light is visible
+                if (transmittance > 0) {
                     BsdfEval bsdfEval = its.evaluateBsdf(directSample.wi);
                     if (bsdfEval) {
-                        result += bsdfEval.value * directSample.weight /
-                                  lightSample.probability;
+                        result += bsdfEval.value * directSample.weight *
+                                  transmittance / lightSample.probability;
                     }
                 }
             }
         }
 
         // 4. Sample BSDF for indirect ray; accumulate emission from area
-        // lights/background Typically, only do this for diffuse/visible
-        // surfaces (NOT for specular/delta BSDFs)
+        // lights/background
+        // Typically, only do this for diffuse/visible surfaces (NOT for
+        // specular/delta BSDFs)
         BsdfSample bsdfSample = its.sampleBsdf(rng);
         if (bsdfSample) {
-            Point newOrigin = its.position + Epsilon * bsdfSample.wi;
-            Ray bounceRay(newOrigin, bsdfSample.wi);
+            // NO Epsilon offset needed - self-intersections handled by
+            // intersection routine
+            Ray bounceRay(its.position, bsdfSample.wi);
             Intersection bounceIts = m_scene->intersect(bounceRay, rng);
 
-            Color nextEmission(0);
-            if (bounceIts) {
-                EmissionEval bounceEmission = bounceIts.evaluateEmission();
-                if (bounceEmission) {
-                    nextEmission = bounceEmission.value;
-                }
-            } else {
-                nextEmission = bounceIts.evaluateEmission().value;
-            }
+            // Simplified: just get emission value directly
+            Color nextEmission = bounceIts.evaluateEmission().value;
+
             result += bsdfSample.weight * nextEmission;
         }
+
         return result;
     }
 
