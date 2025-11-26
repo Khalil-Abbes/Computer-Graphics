@@ -41,9 +41,92 @@ public:
     }
 
     Color evaluate(const Point2 &uv) const override {
-        NOT_IMPLEMENTED
+        // Get image dimensions
+        int width  = m_image->resolution().x();
+        int height = m_image->resolution().y();
+
+        // Convert UV [0,1] to continuous texture coordinates
+        float x = uv.x() * width;
+        float y = (1.0f - uv.y()) * height;
+
+        Color result;
+
+        if (m_filter == FilterMode::Nearest) {
+            // Nearest-neighbor: round to nearest texel
+            result = sampleNearest(x, y, width, height);
+        } else {
+            // Bilinear: interpolate between 4 nearest texels
+            result = sampleBilinear(x, y, width, height);
+        }
+
+        // Apply exposure correction
+        return result * m_exposure;
     }
 
+private:
+    // Apply border handling to integer coordinates
+    int applyBorderMode(int coord, int size) const {
+        if (m_border == BorderMode::Clamp) {
+            // Clamp to [0, size-1]
+            return clamp(coord, 0, size - 1);
+        } else {
+            // Repeat mode: wrap using modulo
+            // Handle negative coordinates properly
+            coord = coord % size;
+            if (coord < 0) {
+                coord += size;
+            }
+            return coord;
+        }
+    }
+
+    // Sample using nearest-neighbor filtering
+    Color sampleNearest(float x, float y, int width, int height) const {
+        // Round to nearest integer
+        int ix = static_cast<int>(std::floor(x + 0.5f));
+        int iy = static_cast<int>(std::floor(y + 0.5f));
+
+        // Apply border handling to integer coordinates
+        ix = applyBorderMode(ix, width);
+        iy = applyBorderMode(iy, height);
+
+        return m_image->get(Point2i(ix, iy));
+    }
+
+    // Sample using bilinear filtering
+    Color sampleBilinear(float x, float y, int width, int height) const {
+        // Get integer coordinates of the four surrounding texels
+        int x0 = static_cast<int>(std::floor(x));
+        int y0 = static_cast<int>(std::floor(y));
+        int x1 = x0 + 1;
+        int y1 = y0 + 1;
+
+        // Apply border handling to integer coordinates (NOT to UV!)
+        x0 = applyBorderMode(x0, width);
+        y0 = applyBorderMode(y0, height);
+        x1 = applyBorderMode(x1, width);
+        y1 = applyBorderMode(y1, height);
+
+        // Compute fractional parts for interpolation
+        float tx = x - std::floor(x);
+        float ty = y - std::floor(y);
+
+        // Fetch the four corner texels
+        Color T00 = m_image->get(Point2i(x0, y0));
+        Color T10 = m_image->get(Point2i(x1, y0));
+        Color T01 = m_image->get(Point2i(x0, y1));
+        Color T11 = m_image->get(Point2i(x1, y1));
+
+        // Bilinear interpolation
+        // First interpolate horizontally (along x)
+        Color T0 = (1 - tx) * T00 + tx * T10;
+        Color T1 = (1 - tx) * T01 + tx * T11;
+
+        // Then interpolate vertically (along y)
+        return (1 - ty) * T0 + ty * T1;
+    }
+
+public:
     std::string toString() const override {
         return tfm::format(
             "ImageTexture[\n"
