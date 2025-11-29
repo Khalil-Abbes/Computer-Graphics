@@ -4,41 +4,38 @@ namespace lightwave {
 
 class PathTracer final : public SamplingIntegrator {
 private:
-    int m_maxDepth; // maximum number of segments (bounces + primary)
-    bool m_neeFlag; // user-set "nee" parameter
-    bool m_useNee;  // actual NEE usage (disabled if no lights in scene)
+    int m_maxDepth;
+    bool m_neeFlag;
+    bool m_useNee;
 
 public:
     PathTracer(const Properties &properties) : SamplingIntegrator(properties) {
-
-        // Depth property: default 2
         m_maxDepth = properties.get<int>("depth", 2);
-
-        // NEE toggle: default true
-        m_neeFlag = properties.get<bool>("nee", true);
-
-        // Disable NEE if there are no non-intersectable lights
-        // (only environment map).
-        m_useNee = m_neeFlag && m_scene->hasLights();
+        m_neeFlag  = properties.get<bool>("nee", true);
+        m_useNee   = m_neeFlag && m_scene->hasLights();
     }
 
     Color Li(const Ray &ray0, Sampler &rng) override {
-        Color L(0.0f); // accumulated radiance
-        Color T(1.0f); // path throughput
-
+        Color L(0.0f);
+        Color T(1.0f);
         Ray ray = ray0;
 
-        for (int b = 0; b < m_maxDepth; ++b) {
+        for (int b = 0;; ++b) { // Removed condition from loop
             Intersection its = m_scene->intersect(ray, rng);
 
             if (!its) {
-                EmissionEval env = its.evaluateEmission(); // background
+                EmissionEval env = its.evaluateEmission();
                 L += T * env.value;
                 break;
             }
 
             if (EmissionEval e = its.evaluateEmission()) {
                 L += T * e.value;
+            }
+
+            // Break before NEE/BSDF if we've reached max depth
+            if (b >= m_maxDepth - 1) {
+                break;
             }
 
             if (m_useNee) {

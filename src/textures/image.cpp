@@ -46,15 +46,16 @@ public:
         int height = m_image->resolution().y();
 
         // Convert UV [0,1] to continuous texture coordinates
-        float x = uv.x() * width;
-        float y = (1.0f - uv.y()) * height;
+        // Subtract 0.5 to account for pixel-centered convention
+        float x = uv.x() * width - 0.5f;
+        float y = (1.0f - uv.y()) * height - 0.5f;
 
         Color result;
 
         if (m_filter == FilterMode::Nearest) {
             // Nearest-neighbor: round to nearest texel
             result = sampleNearest(x, y, width, height);
-        } else {
+        } else if (m_filter == FilterMode::Bilinear) {
             // Bilinear: interpolate between 4 nearest texels
             result = sampleBilinear(x, y, width, height);
         }
@@ -69,7 +70,7 @@ private:
         if (m_border == BorderMode::Clamp) {
             // Clamp to [0, size-1]
             return clamp(coord, 0, size - 1);
-        } else {
+        } else if (m_border == BorderMode::Repeat) {
             // Repeat mode: wrap using modulo
             // Handle negative coordinates properly
             coord = coord % size;
@@ -83,8 +84,8 @@ private:
     // Sample using nearest-neighbor filtering
     Color sampleNearest(float x, float y, int width, int height) const {
         // Round to nearest integer
-        int ix = static_cast<int>(std::floor(x + 0.5f));
-        int iy = static_cast<int>(std::floor(y + 0.5f));
+        int ix = static_cast<int>(std::round(x));
+        int iy = static_cast<int>(std::round(y));
 
         // Apply border handling to integer coordinates
         ix = applyBorderMode(ix, width);
@@ -119,11 +120,11 @@ private:
 
         // Bilinear interpolation
         // First interpolate horizontally (along x)
-        Color T0 = (1 - tx) * T00 + tx * T10;
-        Color T1 = (1 - tx) * T01 + tx * T11;
+        Color T0 = tx * T10 + (1 - tx) * T00;
+        Color T1 = tx * T11 + (1 - tx) * T01;
 
         // Then interpolate vertically (along y)
-        return (1 - ty) * T0 + ty * T1;
+        return ty * T1 + (1 - ty) * T0;
     }
 
 public:
