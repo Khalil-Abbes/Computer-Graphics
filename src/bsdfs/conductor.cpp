@@ -20,14 +20,19 @@ public:
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
                       Sampler &rng) const override {
-        NOT_IMPLEMENTED
+        // Reflect about z-axis (normal in shading space)
+        const Vector wi(-wo.x(), -wo.y(), wo.z());
+
+        // Return with reflectance weight
+        return BsdfSample{ .wi = wi, .weight = m_reflectance->evaluate(uv) };
     }
 
     std::string toString() const override {
-        return tfm::format("Conductor[\n"
-                           "  reflectance = %s\n"
-                           "]",
-                           indent(m_reflectance));
+        return tfm::format(
+            "Conductor[\n"
+            "  reflectance = %s\n"
+            "]",
+            indent(m_reflectance));
     }
 };
 
