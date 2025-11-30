@@ -25,8 +25,8 @@ public:
         float phi   = acos(clamp(localPoint.y(), -1.0f, 1.0f));
 
         // Map to [0,1] range
-        surf.uv.x() = surf.uv.x() = 1.0f - (theta + Pi) / (2 * Pi);
-        surf.uv.y()               = phi / Pi;
+        surf.uv.x() = 1.0f - (theta + Pi) / (2 * Pi);
+        surf.uv.y() = phi / Pi;
 
         // Normal for unit sphere centered at origin
         surf.geometryNormal = Vector(position).normalized();
