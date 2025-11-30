@@ -24,7 +24,7 @@ public:
         float cosThetaI = Frame::cosTheta(wi);
         float cosThetaO = Frame::cosTheta(wo);
 
-        if (cosThetaI <= 1e-3f || cosThetaO <= 1e-3f) {
+        if (cosThetaI <= 1e-2f || cosThetaO <= 1e-2f) {
             return BsdfEval::invalid();
         }
 
@@ -36,13 +36,12 @@ public:
 
         float D = evaluateGGX(alpha, h);
 
-        // Use the PRODUCT form (separable G2) - this is darker
-        float G1_wi = smithG1(alpha, wi, h);
-        float G1_wo = smithG1(alpha, wo, h);
-        float G2    = G1_wi * G1_wo; // This should darken appropriately
+        float G1_wi = smithG1(alpha, h, wi); // h first, then wi
+        float G1_wo = smithG1(alpha, h, wo); // h first, then wo
+        float G2    = G1_wi * G1_wo;
 
         float denominator = 4.0f * cosThetaI * cosThetaO;
-        Color brdf        = reflectance * (D * G2 / denominator);
+        Color brdf        = reflectance * (D * (G2 / denominator));
 
         return BsdfEval{ .value = brdf * cosThetaI };
     }
@@ -61,7 +60,7 @@ public:
         Vector h  = sampleGGXVNDF(alpha, wo, rng.next2D());
         Vector wi = reflect(wo, h);
 
-        float G1_wi = smithG1(alpha, wi, h);
+        float G1_wi = smithG1(alpha, h, wi); // h first, then wi
 
         return BsdfSample{
             .wi     = wi,
