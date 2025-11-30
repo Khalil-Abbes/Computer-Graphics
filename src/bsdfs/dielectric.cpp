@@ -39,11 +39,7 @@ public:
         // exiting: eta_i/eta_o (glass to air: eta/1)
         float eta_ratio = entering ? (1.0f / eta) : eta;
 
-        // Compute Fresnel reflectance using dielectric Fresnel equations
-        // For unpolarized light at the interface
-        float absCosTheta = std::abs(cosTheta_o);
-
-        // Compute cos(theta_i) for the transmitted ray
+        // Compute sin²(theta_i) using Snell's law
         float sin2Theta_i =
             eta_ratio * eta_ratio * (1.0f - cosTheta_o * cosTheta_o);
 
@@ -55,10 +51,12 @@ public:
             return BsdfSample{ .wi = wi, .weight = reflectance };
         }
 
-        float cosTheta_i = std::sqrt(1.0f - sin2Theta_i);
+        // Compute cos(theta_i) for the transmitted ray
+        float cosTheta_i  = std::sqrt(1.0f - sin2Theta_i);
+        float absCosTheta = std::abs(cosTheta_o);
 
         // Compute Fresnel reflectance using the Fresnel equations for
-        // dielectrics Parallel and perpendicular polarized components
+        // dielectrics Perpendicular (S) and parallel (P) polarized components
         float Rs = (eta_ratio * absCosTheta - cosTheta_i) /
                    (eta_ratio * absCosTheta + cosTheta_i);
         float Rp = (absCosTheta - eta_ratio * cosTheta_i) /
@@ -67,29 +65,62 @@ public:
         // Average for unpolarized light
         float Fr = 0.5f * (Rs * Rs + Rp * Rp);
 
-        // Importance sample: choose reflection or refraction based on Fresnel
-        if (rng.next() < Fr) {
+        // Importance sampling: weight by both Fresnel term and color brightness
+        // This is the KEY to reducing variance!
+        // The "contribution" from each lobe is Fresnel * color_brightness
+        float reflectContrib = Fr * reflectance.mean();
+        float refractContrib = (1.0f - Fr) * transmittance.mean();
+        float totalContrib   = reflectContrib + refractContrib;
+
+        // Calculate sampling probability proportional to contribution
+        // If totalContrib is 0 (both black), default to reflection
+        float reflectProb =
+            (totalContrib > 0) ? (reflectContrib / totalContrib) : 1.0f;
+
+        if (rng.next() < reflectProb) {
             // REFLECTION: Perfect mirror reflection about the normal
             Vector wi = reflect(wo, Vector(0, 0, 1));
 
-            // Weight = reflectance / probability
-            // The cosine term is included in weight, but cancels with pdf
-            return BsdfSample{ .wi = wi, .weight = reflectance };
-        } else {
-            // REFRACTION: Compute refracted direction
+            // Monte Carlo estimator: E = f(x) / p(x)
+            // f(x) = reflectance * Fr (the actual contribution)
+            // p(x) = reflectProb (our sampling probability)
+            // Weight = f(x) / p(x) = (reflectance * Fr) / reflectProb
 
-            // Compute the refracted direction using Snell's law
-            // wi = eta_ratio * (-wo) + (eta_ratio * cosTheta_o - cosTheta_i) *
-            // n
+            // The BSDF value is: reflectance * delta(wi - reflect(wo))
+            // When we importance sample with probability reflectProb, the
+            // weight becomes: weight = (reflectance * Fr) / reflectProb
+
+            Color weight = reflectance;
+            if (reflectProb > 0) {
+                weight = weight * (Fr / reflectProb);
+            }
+
+            return BsdfSample{ .wi = wi, .weight = weight };
+        } else {
+            // REFRACTION: Compute refracted direction using Snell's law
+
+            // Determine sign for entering vs exiting
             float sign = entering ? 1.0f : -1.0f;
-            Vector wi  = Vector(
+
+            // Compute refracted direction
+            // wi = eta_ratio * (-wo) + (eta_ratio * cos_o - cos_i) * n
+            Vector wi = Vector(
                 -eta_ratio * wo.x(), -eta_ratio * wo.y(), -sign * cosTheta_i);
 
-            // Solid angle compression factor: eta_ratio^2
-            // This accounts for radiance scaling when crossing interfaces
+            // Solid angle compression factor: eta_ratio²
             float eta2 = eta_ratio * eta_ratio;
 
-            return BsdfSample{ .wi = wi, .weight = transmittance * eta2 };
+            // Monte Carlo estimator: E = f(x) / p(x)
+            // f(x) = transmittance * (1 - Fr) * eta2
+            // p(x) = 1 - reflectProb (our sampling probability for refraction)
+            float refractProb = 1.0f - reflectProb;
+
+            Color weight = transmittance * eta2;
+            if (refractProb > 0) {
+                weight = weight * ((1.0f - Fr) / refractProb);
+            }
+
+            return BsdfSample{ .wi = wi, .weight = weight };
         }
     }
 
