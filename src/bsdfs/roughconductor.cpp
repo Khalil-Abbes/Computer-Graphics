@@ -16,27 +16,57 @@ public:
 
     BsdfEval evaluate(const Point2 &uv, const Vector &wo,
                       const Vector &wi) const override {
-        // Using the squared roughness parameter results in a more gradual
-        // transition from specular to rough. For numerical stability, we avoid
-        // extremely specular distributions (alpha values below 10^-3)
-        const auto alpha = max(float(1e-3), sqr(m_roughness->scalar(uv)));
+        using namespace microfacet;
 
-        NOT_IMPLEMENTED
+        const auto alpha  = max(float(1e-3), sqr(m_roughness->scalar(uv)));
+        Color reflectance = m_reflectance->evaluate(uv);
 
-        // hints:
-        // * the microfacet normal can be computed from `wi' and `wo'
+        float cosThetaI = Frame::cosTheta(wi);
+        float cosThetaO = Frame::cosTheta(wo);
+
+        if (cosThetaI <= 1e-3f || cosThetaO <= 1e-3f) {
+            return BsdfEval::invalid();
+        }
+
+        Vector h = (wi + wo).normalized();
+
+        if (Frame::cosTheta(h) <= 0) {
+            return BsdfEval::invalid();
+        }
+
+        float D = evaluateGGX(alpha, h);
+
+        // Use the PRODUCT form (separable G2) - this is darker
+        float G1_wi = smithG1(alpha, wi, h);
+        float G1_wo = smithG1(alpha, wo, h);
+        float G2    = G1_wi * G1_wo; // This should darken appropriately
+
+        float denominator = 4.0f * cosThetaI * cosThetaO;
+        Color brdf        = reflectance * (D * G2 / denominator);
+
+        return BsdfEval{ .value = brdf * cosThetaI };
     }
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
                       Sampler &rng) const override {
-        const auto alpha = max(float(1e-3), sqr(m_roughness->scalar(uv)));
+        using namespace microfacet;
 
-        NOT_IMPLEMENTED
+        const auto alpha  = max(float(1e-3), sqr(m_roughness->scalar(uv)));
+        Color reflectance = m_reflectance->evaluate(uv);
 
-        // hints:
-        // * do not forget to cancel out as many terms from your equations as
-        // possible!
-        //   (the resulting sample weight is only a product of two factors)
+        if (Frame::cosTheta(wo) <= 1e-6f) {
+            return BsdfSample::invalid();
+        }
+
+        Vector h  = sampleGGXVNDF(alpha, wo, rng.next2D());
+        Vector wi = reflect(wo, h);
+
+        float G1_wi = smithG1(alpha, wi, h);
+
+        return BsdfSample{
+            .wi     = wi,
+            .weight = reflectance * G1_wi // NO extra factors here!
+        };
     }
 
     std::string toString() const override {
