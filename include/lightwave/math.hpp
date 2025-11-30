@@ -857,9 +857,7 @@ struct Frame {
     /// @brief Converts a vector from local shading coordinates to world-space
     /// coordinates.
     Vector toWorld(const Vector &local) const {
-        return (local.x() * tangent + local.y() * bitangent +
-                local.z() * normal)
-            .normalized();
+        return local.x() * tangent + local.y() * bitangent + local.z() * normal;
     }
 
     /// @brief Tests whether two vectors lie within the same hemisphere (i.e.,
