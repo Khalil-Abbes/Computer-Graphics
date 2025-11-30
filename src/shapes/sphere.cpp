@@ -18,28 +18,34 @@ public:
         surf.position = position;
 
         // Calculate UV coordinates using spherical mapping
-        Vector localPoint =
-            Vector(position).normalized(); // Already on unit sphere
+        Vector localPoint = Vector(position).normalized();
 
         // Spherical coordinates: theta (azimuthal), phi (polar)
-        float theta =
-            atan2(localPoint.z(), localPoint.x()); // angle around Y-axis
-        float phi =
-            acos(clamp(localPoint.y(), -1.0f, 1.0f)); // angle from north pole
+        float theta = atan2(localPoint.z(), localPoint.x());
+        float phi   = acos(clamp(localPoint.y(), -1.0f, 1.0f));
 
         // Map to [0,1] range
-        surf.uv.x() =
-            1.0f - (theta + Pi) / (2 * Pi); // wrap theta from [-π,π] to [0,1]
-        surf.uv.y() = phi / Pi;             // map phi from [0,π] to [0,1]
+        surf.uv.x() = surf.uv.x() = 1.0f - (theta + Pi) / (2 * Pi);
+        surf.uv.y()               = phi / Pi;
 
+        // Normal for unit sphere centered at origin
         surf.geometryNormal = Vector(position).normalized();
-        surf.shadingNormal  = Vector(position).normalized();
+        surf.shadingNormal  = surf.geometryNormal;
 
-        // TODO: not implemented
+        // **FIXED TANGENT** - must be perpendicular to normal
+        // Tangent follows the direction of increasing theta (dP/dtheta)
+        Vector n     = surf.shadingNormal;
+        surf.tangent = Vector(-n.z(), 0.0f, n.x());
+
+        float tangentLen = surf.tangent.length();
+        if (tangentLen > 1e-8f) {
+            surf.tangent = surf.tangent / tangentLen;
+        } else {
+            // At poles, use arbitrary tangent
+            surf.tangent = Vector(1, 0, 0);
+        }
+
         surf.pdf = 1.0f;
-
-        // Set tangent to (1, 0, 0) as requested
-        surf.tangent = Vector(1, 0, 0);
     }
 
     bool intersect(const Ray &ray, Intersection &its,
