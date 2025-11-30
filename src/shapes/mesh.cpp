@@ -104,30 +104,21 @@ protected:
 
         // TODO: Maybe move this into inline populate function?
 
+        // After line ~111 where you set its.position:
         its.position = position;
 
-        // compute the shading frame, texture coordinates
-        // and area pdf? (same as sampleArea)
+        // **ADD THIS CRITICAL LINE**
+        its.uv = (1 - u - v) * c1.uv + u * c2.uv + v * c3.uv;
 
-        // map the position from [-1,-1,0]..[+1,+1,0] to [0,0]..[1,1] by
-        // discarding the z component and rescaling
-        // surf.uv.x() = (position.x() + 1) / 2;
-        // surf.uv.y() = (position.y() + 1) / 2;
-
-        // TODO: Implement this
-        // surf.tangent = Vector(position);
-
+        // Then continue with the rest as before:
         its.geometryNormal = (c2.position - c1.position)
                                  .cross(c3.position - c1.position)
                                  .normalized();
 
         if (m_smoothNormals) {
-            // The order is slightly different from the one on slides I think
             its.shadingNormal =
                 Vertex::interpolate({ u, v }, c1, c2, c3).normal.normalized();
-        }
-
-        else {
+        } else {
             its.shadingNormal = its.geometryNormal;
         }
 
@@ -146,7 +137,7 @@ protected:
             its.tangent = tangentDir.normalized();
         }
 
-               // TODO: not implemented
+        // TODO: not implemented
         its.pdf = 1.0f;
 
         return true;
