@@ -117,7 +117,7 @@ protected:
 
         if (m_smoothNormals) {
             its.shadingNormal =
-                Vertex::interpolate({ u, v }, c1, c2, c3).normal;
+                Vertex::interpolate({ u, v }, c1, c2, c3).normal.normalized();
         } else {
             its.shadingNormal = its.geometryNormal;
         }
