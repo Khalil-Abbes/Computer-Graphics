@@ -9,19 +9,32 @@ struct DiffuseLobe {
     Color color;
 
     BsdfEval evaluate(const Vector &wo, const Vector &wi) const {
-        NOT_IMPLEMENTED
+        // Check if wi and wo are in the same hemisphere
+        if (!Frame::sameHemisphere(wo, wi)) {
+            return BsdfEval::invalid();
+        }
 
-        // hints:
-        // * copy your diffuse bsdf evaluate here
-        // * you do not need to query a texture, the albedo is given by `color`
+        // Diffuse BRDF: (albedo / π) * cos(θ_i)
+        Color value = Frame::absCosTheta(wi) * color * InvPi;
+        return BsdfEval{ .value = value };
     }
 
     BsdfSample sample(const Vector &wo, Sampler &rng) const {
-        NOT_IMPLEMENTED
+        // Sample a cosine-weighted direction in local coordinates
+        Vector wi = squareToCosineHemisphere(rng.next2D());
 
-        // hints:
-        // * copy your diffuse bsdf evaluate here
-        // * you do not need to query a texture, the albedo is given by `color`
+        // Flip wi if wo is below the surface to ensure they're in the same
+        // hemisphere
+        if (Frame::cosTheta(wo) < 0) {
+            wi.z() = -wi.z();
+        }
+
+        // Always normalize to ensure perfect normalization
+        wi = wi.normalized();
+
+        // With cosine-weighted sampling, the weight simplifies to just the
+        // color
+        return BsdfSample{ .wi = wi, .weight = color };
     }
 };
 
@@ -30,23 +43,46 @@ struct MetallicLobe {
     Color color;
 
     BsdfEval evaluate(const Vector &wo, const Vector &wi) const {
-        NOT_IMPLEMENTED
+        using namespace microfacet;
 
-        // hints:
-        // * copy your roughconductor bsdf evaluate here
-        // * you do not need to query textures
-        //   * the reflectance is given by `color'
-        //   * the variable `alpha' is already provided for you
+        float cosThetaI = Frame::cosTheta(wi);
+        float cosThetaO = Frame::cosTheta(wo);
+
+        if (cosThetaI <= 1e-6f || cosThetaO <= 1e-6f) {
+            return BsdfEval::invalid();
+        }
+
+        Vector h = (wi + wo).normalized();
+
+        if (Frame::cosTheta(h) <= 0) {
+            return BsdfEval::invalid();
+        }
+
+        float D = evaluateGGX(alpha, h);
+
+        float G1_wi = smithG1(alpha, h, wi);
+        float G1_wo = smithG1(alpha, h, wo);
+        float G2    = G1_wi * G1_wo;
+
+        float denominator = 4.0f * cosThetaI * cosThetaO;
+        Color brdf        = color * (D * (G2 / denominator));
+
+        return BsdfEval{ .value = brdf * cosThetaI };
     }
 
     BsdfSample sample(const Vector &wo, Sampler &rng) const {
-        NOT_IMPLEMENTED
+        using namespace microfacet;
 
-        // hints:
-        // * copy your roughconductor bsdf sample here
-        // * you do not need to query textures
-        //   * the reflectance is given by `color'
-        //   * the variable `alpha' is already provided for you
+        if (Frame::cosTheta(wo) <= 1e-6f) {
+            return BsdfSample::invalid();
+        }
+
+        Vector h  = sampleGGXVNDF(alpha, wo, rng.next2D());
+        Vector wi = reflect(wo, h);
+
+        float G1_wi = smithG1(alpha, h, wi);
+
+        return BsdfSample{ .wi = wi, .weight = color * G1_wi };
     }
 };
 
@@ -102,10 +138,13 @@ public:
         PROFILE("Principled")
 
         const auto combination = combine(uv, wo);
-        NOT_IMPLEMENTED
 
-        // hint: evaluate `combination.diffuse` and `combination.metallic` and
-        // combine their results
+        // Evaluate both lobes and sum their contributions
+        BsdfEval diffuseEval  = combination.diffuse.evaluate(wo, wi);
+        BsdfEval metallicEval = combination.metallic.evaluate(wo, wi);
+
+        // Return the sum of both lobes
+        return BsdfEval{ .value = diffuseEval.value + metallicEval.value };
     }
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
@@ -113,10 +152,23 @@ public:
         PROFILE("Principled")
 
         const auto combination = combine(uv, wo);
-        NOT_IMPLEMENTED
 
-        // hint: sample either `combination.diffuse` (probability
-        // `combination.diffuseSelectionProb`) or `combination.metallic`
+        // Sample either diffuse or metallic lobe based on selection probability
+        if (rng.next() < combination.diffuseSelectionProb) {
+            // Sample diffuse lobe
+            BsdfSample sample = combination.diffuse.sample(wo, rng);
+            // Divide weight by selection probability for correct importance
+            // sampling
+            sample.weight = sample.weight / combination.diffuseSelectionProb;
+            return sample;
+        } else {
+            // Sample metallic lobe
+            BsdfSample sample = combination.metallic.sample(wo, rng);
+            // Divide weight by selection probability (1 - diffuseSelectionProb)
+            sample.weight =
+                sample.weight / (1.0f - combination.diffuseSelectionProb);
+            return sample;
+        }
     }
 
     std::string toString() const override {
