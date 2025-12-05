@@ -134,7 +134,7 @@ protected:
             float tangentScale = 1.0f / uvDet;
             Vector tangentDir =
                 (dpAB * uvAC.y() - dpAC * uvAB.y()) * tangentScale;
-            its.tangent = tangentDir.normalized();
+            its.tangent = tangentDir;
         }
 
         // TODO: not implemented
