@@ -20,23 +20,15 @@ public:
         Vector localDir = direction;
 
         // Step 1: Transform from world to local coordinates
-
         if (m_transform) {
             localDir = m_transform->inverse(direction);
-            // flipping component works, don't ask me why
-            localDir = Vector(-localDir.x(), localDir.y(), localDir.z());
         }
 
         // Step 2: Convert Cartesian direction to spherical coordinates
-        // Azimuth (phi): angle in xz-plane from x-axis
-        float phi = atan2(localDir.z(), localDir.x());
+        // Azimuth (phi): angle in xz-plane from +x, wrapped to [0, 2π]
+        float phi = atan2(-localDir.z(), localDir.x()) + Pi; // in [0, 2π]
 
-        // Ensure phi is in [0, 2π] range
-        if (phi < 0) {
-            phi += TwoPi;
-        }
-
-        // Elevation (theta): angle from y-axis
+        // Elevation (theta): angle from +y axis
         float theta = atan2(
             sqrt(localDir.x() * localDir.x() + localDir.z() * localDir.z()),
             localDir.y());

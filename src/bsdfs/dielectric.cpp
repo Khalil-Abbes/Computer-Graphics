@@ -52,18 +52,18 @@ public:
         }
 
         // Compute cos(theta_i) for the transmitted ray
-        float cosTheta_i  = std::sqrt(1.0f - sin2Theta_i);
-        float absCosTheta = std::abs(cosTheta_o);
+        float cosTheta_i = std::sqrt(1.0f - sin2Theta_i);
 
-        // Compute Fresnel reflectance using the Fresnel equations for
-        // dielectrics Perpendicular (S) and parallel (P) polarized components
-        float Rs = (eta_ratio * absCosTheta - cosTheta_i) /
-                   (eta_ratio * absCosTheta + cosTheta_i);
-        float Rp = (absCosTheta - eta_ratio * cosTheta_i) /
-                   (absCosTheta + eta_ratio * cosTheta_i);
+        // fresnelDielectric expects eta = n2 / n1 (relative IOR)
+        // Our m_ior stores interior/exterior = n_i / n_e,
+        // so:
+        //   entering  (outside -> inside): n1 = n_e, n2 = n_i  => eta = eta_i /
+        //   eta_e = eta exiting   (inside -> outside): n1 = n_i, n2 = n_e  =>
+        //   eta = eta_e / eta_i = 1/eta
+        float relEta = entering ? eta : (1.0f / eta);
 
-        // Average for unpolarized light
-        float Fr = 0.5f * (Rs * Rs + Rp * Rp);
+        // Unpolarized Fresnel term using the existing helper
+        float Fr = fresnelDielectric(cosTheta_o, relEta);
 
         // Importance sampling: weight by both Fresnel term and color brightness
         // This is the KEY to reducing variance!

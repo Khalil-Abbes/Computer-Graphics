@@ -22,7 +22,7 @@ public:
 
         // Spherical coordinates: theta (azimuthal), phi (polar)
         float theta = atan2(localPoint.z(), localPoint.x());
-        float phi   = acos(clamp(localPoint.y(), -1.0f, 1.0f));
+        float phi   = safe_acos(localPoint.y());
 
         // Map to [0,1] range
         surf.uv.x() = 1.0f - (theta + Pi) / (2 * Pi);

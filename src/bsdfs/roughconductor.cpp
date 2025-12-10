@@ -18,54 +18,64 @@ public:
                       const Vector &wi) const override {
         using namespace microfacet;
 
-        const auto alpha  = max(float(1e-3), sqr(m_roughness->scalar(uv)));
-        Color reflectance = m_reflectance->evaluate(uv);
+        const float alpha       = max(1e-3f, sqr(m_roughness->scalar(uv)));
+        const Color reflectance = m_reflectance->evaluate(uv);
 
-        float cosThetaI = Frame::cosTheta(wi);
-        float cosThetaO = Frame::cosTheta(wo);
+        const float cosThetaI = Frame::cosTheta(wi);
+        const float cosThetaO = Frame::cosTheta(wo);
 
-        if (cosThetaI <= 1e-2f || cosThetaO <= 1e-2f) {
+        // Only require that wi and wo lie in the same hemisphere
+        if (!Frame::sameHemisphere(wi, wo)) {
             return BsdfEval::invalid();
         }
 
+        const float absCosThetaI = std::abs(cosThetaI);
+        const float absCosThetaO = std::abs(cosThetaO);
+
+        // Avoid division by very small values (grazing)
+        if (absCosThetaI <= 1e-4f || absCosThetaO <= 1e-4f) {
+            return BsdfEval::invalid();
+        }
+
+        // Half-vector
         Vector h = (wi + wo).normalized();
 
-        if (Frame::cosTheta(h) <= 0) {
+        // Microfacet normal must be in the visible hemisphere
+        if (Frame::cosTheta(h) <= 0.0f) {
             return BsdfEval::invalid();
         }
 
-        float D = evaluateGGX(alpha, h);
+        const float D     = evaluateGGX(alpha, h);
+        const float G1_wi = smithG1(alpha, h, wi);
+        const float G1_wo = smithG1(alpha, h, wo);
+        const float G2    = G1_wi * G1_wo;
 
-        float G1_wi = smithG1(alpha, h, wi); // h first, then wi
-        float G1_wo = smithG1(alpha, h, wo); // h first, then wo
-        float G2    = G1_wi * G1_wo;
+        // f * |cosThetaI| = ρ D G / (4 |cosThetaO|)
+        const float denominator = 4.0f * absCosThetaO;
+        const Color value       = reflectance * (D * (G2 / denominator));
 
-        float denominator = 4.0f * cosThetaI * cosThetaO;
-        Color brdf        = reflectance * (D * (G2 / denominator));
-
-        return BsdfEval{ .value = brdf * cosThetaI };
+        return BsdfEval{ .value = value };
     }
 
     BsdfSample sample(const Point2 &uv, const Vector &wo,
                       Sampler &rng) const override {
         using namespace microfacet;
 
-        const auto alpha  = max(float(1e-3), sqr(m_roughness->scalar(uv)));
-        Color reflectance = m_reflectance->evaluate(uv);
+        const float alpha       = max(1e-3f, sqr(m_roughness->scalar(uv)));
+        const Color reflectance = m_reflectance->evaluate(uv);
 
-        if (Frame::cosTheta(wo) <= 1e-6f) {
-            return BsdfSample::invalid();
-        }
-
+        // Sample visible microfacet normal
         Vector h  = sampleGGXVNDF(alpha, wo, rng.next2D());
         Vector wi = reflect(wo, h);
 
-        float G1_wi = smithG1(alpha, h, wi); // h first, then wi
+        // Ensure wo and wi are in the same hemisphere
+        if (!Frame::sameHemisphere(wi, wo)) {
+            return BsdfSample::invalid();
+        }
 
-        return BsdfSample{
-            .wi     = wi,
-            .weight = reflectance * G1_wi // NO extra factors here!
-        };
+        const float G1_wi = smithG1(alpha, h, wi);
+
+        return BsdfSample{ .wi = wi, .weight = reflectance * G1_wi };
     }
 
     std::string toString() const override {
