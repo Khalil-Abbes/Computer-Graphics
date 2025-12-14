@@ -44,19 +44,23 @@ public:
                     DirectLightSample s =
                         ls.light->sampleDirect(its.position, rng);
                     if (s) {
+                        // 1) Shadow ray towards the light
                         Ray shadow(its.position, s.wi);
-                        Intersection occ = m_scene->intersect(shadow, rng);
 
-                        bool occluded = false;
-                        if (occ) {
-                            occluded = std::isinf(s.distance)
-                                           ? true
-                                           : (occ.t < s.distance);
-                        }
+                        // 2) Compute transmittance along this ray up to the
+                        // light
+                        //    - 0 if surface-occluded
+                        //    - in (0,1] otherwise, including volumetric
+                        //    attenuation
+                        float Tr =
+                            m_scene->transmittance(shadow, s.distance, rng);
 
-                        if (!occluded) {
+                        // 3) Only add contribution if something makes it
+                        // through
+                        if (Tr > 0.0f) {
                             if (BsdfEval f = its.evaluateBsdf(s.wi)) {
-                                L += T * f.value * s.weight / ls.probability;
+                                L += T * (Tr * f.value) * s.weight /
+                                     ls.probability;
                             }
                         }
                     }
