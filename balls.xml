@@ -1,0 +1,53 @@
+<scene id="scene">
+  <camera type="perspective">
+    <integer name="width" value="1920"/>
+    <integer name="height" value="1080"/>
+    <float name="fov" value="39.598"/>
+    <string name="fovAxis" value="x"/>
+    <transform>
+      <matrix value="0.68592,0.32401,-0.65156,7.3589,  0.72768,-0.30542,0.61417,-6.9258,  -4.0113e-09,-0.8954,-0.44527,4.9583,  0,0,0,1"/>
+    </transform>
+  </camera>
+  <instance>
+    <shape type="sphere"/>
+    <transform>
+      <scale value="0.1"/>
+      <translate x="4.0762" y="1.0055" z="5.9039"/>
+    </transform>
+    <emission type="lambertian">
+      <texture name="emission" type="constant" value="2533,2533,2533"/>
+    </emission>
+  </instance>
+  <instance>
+    <bsdf id="football" type="principled">
+      <texture name="baseColor" type="image" filename="textures/football_diff_4k.jpg"/>
+      <texture name="roughness" type="image" filename="textures/football_rough.png.exr" linear="true"/>
+      <texture name="metallic" type="constant" value="0"/>
+      <texture name="specular" type="constant" value="0"/>
+    </bsdf>
+    <texture name="normal" id="football.000" type="image" filename="textures/football_nor_gl.png.exr" linear="true"/>
+    <shape type="mesh" filename="meshes/Football_01_deflated.ply"/>
+    <transform>
+      <matrix value="1,0,0,-0.15,  0,1,0,0,  0,0,1,0,  0,0,0,1"/>
+    </transform>
+  </instance>
+  <instance>
+    <ref id="football"/>
+    <ref name="normal" id="football.000"/>
+    <shape type="mesh" filename="meshes/Football_01_inflated.ply"/>
+    <transform>
+      <matrix value="1,0,0,0.15,  0,1,0,0,  0,0,1,0.111,  0,0,0,1"/>
+    </transform>
+  </instance>
+  <light type="envmap">
+    <texture type="constant" value="0.050876,0.050876,0.050876"/>
+    <transform>
+      <matrix value="1,0,0,0,  0,0,1,0,  0,-1,0,0,  0,0,0,1"/>
+    </transform>
+  </light>
+</scene>
+<integrator type="pathtracer" depth="10">
+  <ref id="scene"/>
+  <image id="noisy"/>
+  <sampler type="independent" count="64"/>
+</integrator>
