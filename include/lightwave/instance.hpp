@@ -6,6 +6,7 @@
 #pragma once
 
 #include <lightwave/core.hpp>
+#include <lightwave/instance.hpp>
 #include <lightwave/shape.hpp>
 
 namespace lightwave {

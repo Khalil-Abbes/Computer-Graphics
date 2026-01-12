@@ -37,66 +37,129 @@ inline void validateIntersection(const Intersection &its) {
 
 bool Instance::intersect(const Ray &worldRay, Intersection &its,
                          Sampler &rng) const {
-    // --- PATH 1: Fast Path (No Transform) ---
+    // If we end up returning false, we must not modify 'its' at all.
+    const Intersection itsBackup = its;
+
+    // If there is already a closer hit in 'itsBackup', we must not return hits
+    // behind it.
+    const float tMaxWorld = itsBackup.t;
+
+    auto acceptByAlpha = [&](const Intersection &cand) -> bool {
+        if (!m_alpha)
+            return true; // no mask => always accept
+        float a = m_alpha->scalar(cand.uv);
+        a       = std::clamp(a, 0.0f, 1.0f);
+        return rng.next() <= a; // accept with probability a
+    };
+
+    // ----------------------------
+    // Path 1: No transform
+    // ----------------------------
     if (!m_transform) {
-        const Ray localRay        = worldRay;
-        const bool wasIntersected = m_shape->intersect(localRay, its, rng);
-        if (wasIntersected) {
-            its.instance = this;
-            validateIntersection(its);
+        Ray r = worldRay;
 
-            // [MISSING LOGIC ADDED HERE]
-            if (m_alpha) {
-                // LOGGER DEBUG: Check if we are actually reading the alpha
-                // logger(EInfo,
-                //        "Hit object with alpha mask at UV: %.2f, %.2f",
-                //        its.uv.x(),
-                //         its.uv.y());
+        // Track how far we already advanced along the *original* world ray.
+        float tAccumWorld = 0.0f;
 
-                float alphaVal = m_alpha->scalar(its.uv);
-                if (rng.next() > alphaVal) {
-                    return false; // Treat as if we missed (Transparent)
-                }
-            }
-        }
-        return wasIntersected;
-    }
+        for (int guard = 0; guard < 256; ++guard) {
+            Intersection cand = itsBackup;    // start from backup each attempt
+            cand.t = tMaxWorld - tAccumWorld; // remaining distance budget
 
-    // --- PATH 2: Slow Path (With Transform) ---
-    const float previousT = its.t;
-    Ray localRay          = m_transform->inverse(worldRay).normalized();
-    if (its) {
-        its.t = (m_transform->inverse(its.position) - localRay.origin).length();
-    }
-
-    const bool wasIntersected = m_shape->intersect(localRay, its, rng);
-    if (wasIntersected) {
-        its.instance = this;
-        validateIntersection(its);
-
-        //
-        if (m_alpha) {
-            // LOGGER DEBUG
-            // logger(EInfo,
-            //       "Hit Transformed object at UV: %.2f, %.2f",
-            //       its.uv.x(),
-            //       its.uv.y());
-
-            float alphaVal = m_alpha->scalar(its.uv);
-            if (rng.next() > alphaVal) {
-                its.t = previousT; // IMPORTANT: Restore old T so we can hit
-                                   // things behind this
+            if (cand.t <= Epsilon) {
+                its = itsBackup;
                 return false;
             }
+
+            if (!m_shape->intersect(r, cand, rng)) {
+                its = itsBackup;
+                return false;
+            }
+
+            cand.instance = this;
+            validateIntersection(cand);
+
+            if (acceptByAlpha(cand)) {
+                // Convert candidate t back to the original world-ray parameter:
+                // current ray origin is worldRay.origin + tAccumWorld * dir, so
+                // total is:
+                cand.t += tAccumWorld;
+                its = cand;
+                return true;
+            }
+
+            // Rejected: step forward and try again behind this surface.
+            // Advance by cand.t in the *current* ray parameter.
+            const float step = cand.t;
+            tAccumWorld += step + Epsilon;
+
+            r.origin = worldRay.origin + tAccumWorld * worldRay.direction;
         }
 
-        transformFrame(its, -localRay.direction);
-        its.t = (its.position - worldRay.origin).length();
-    } else {
-        its.t = previousT;
+        its = itsBackup;
+        return false;
     }
 
-    return wasIntersected;
+    // ----------------------------
+    // Path 2: With transform
+    // ----------------------------
+    Ray localRay = m_transform->inverse(worldRay).normalized();
+
+    // Convert existing closest-hit (world) into a local "distance budget"
+    // estimate. This mirrors the idea from the framework: intersection routines
+    // often use its.t as a max bound.
+    float tMaxLocal = std::numeric_limits<float>::infinity();
+    if (itsBackup) {
+        // itsBackup.position is in world space; map it to local and measure
+        // distance from local origin.
+        const Point pLocalMax = m_transform->inverse(itsBackup.position);
+        tMaxLocal             = (pLocalMax - localRay.origin).length();
+    }
+
+    Ray r             = localRay;
+    float tAccumLocal = 0.0f;
+
+    for (int guard = 0; guard < 256; ++guard) {
+        Intersection cand = itsBackup;
+        cand.t            = tMaxLocal - tAccumLocal;
+
+        if (cand.t <= Epsilon) {
+            its = itsBackup;
+            return false;
+        }
+
+        if (!m_shape->intersect(r, cand, rng)) {
+            its = itsBackup;
+            return false;
+        }
+
+        cand.instance = this;
+        validateIntersection(cand);
+
+        if (acceptByAlpha(cand)) {
+            // Transform hit info to world
+            transformFrame(cand, -r.direction);
+
+            // Compute world t (distance from original world ray origin)
+            cand.t = (cand.position - worldRay.origin).length();
+
+            // Enforce global closest-hit constraint
+            if (cand.t >= tMaxWorld) {
+                its = itsBackup;
+                return false;
+            }
+
+            its = cand;
+            return true;
+        }
+
+        // Rejected: advance local ray and continue
+        const float step = cand.t;
+        tAccumLocal += step + Epsilon;
+        r.origin = localRay.origin + tAccumLocal * localRay.direction;
+    }
+
+    its = itsBackup;
+    return false;
 }
 
 float Instance::transmittance(const Ray &worldRay, float tMax,
