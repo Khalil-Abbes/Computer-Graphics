@@ -1,5 +1,5 @@
 #include <lightwave.hpp>
-
+#include <lightwave/logger.hpp>
 namespace lightwave {
 
 class ImageTexture : public Texture {
@@ -62,6 +62,42 @@ public:
 
         // Apply exposure correction
         return result * m_exposure;
+    }
+
+    float scalar(const Point2 &uv) const override {
+        // 1. Get Brightness (Red Channel)
+        Color c          = evaluate(uv);
+        float brightness = c.r();
+
+        // 2. Get Raw Alpha
+        float alpha = 1.0f;
+        if (m_image) {
+            alpha = m_image->evaluateAlpha(uv);
+        }
+
+        // 3. Calculate Final Value
+        float finalValue = brightness * alpha;
+
+        // --- DEBUG LOGGING ---
+        // Only log if we are near the center of the texture (UV ~ 0.5, 0.5)
+        // This prevents the console from exploding with millions of messages.
+
+        static int logCount = 0;
+        if (logCount < 10) { // Limit to first 10 hits to be safe
+            logger(EInfo,
+                   "SCALAR DEBUG: UV(%.2f, %.2f) -> Brightness: %.2f | "
+                   "Alpha: %.2f | FINAL: %.2f",
+                   uv.x(),
+                   uv.y(),
+                   brightness,
+                   alpha,
+                   finalValue);
+            logCount++;
+        }
+
+        // ---------------------
+
+        return finalValue;
     }
 
 private:

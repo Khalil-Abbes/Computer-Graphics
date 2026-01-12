@@ -25,6 +25,9 @@ class Image final : public Object {
     /// @brief The folder the image was loaded from or should be stored to.
     std::filesystem::path m_basePath;
 
+    /// @brief An optional sequence of alpha values for each pixel.
+    std::vector<float> m_alpha;
+
     /**
      * @brief Converts a normalized position from [0,0]..[+1,+1] to a pixel
      * index [0,0]..[resolution.x-1, resolution.y-1]. Input positions outside
@@ -41,6 +44,15 @@ class Image final : public Object {
 
 public:
     Image() {}
+
+    float evaluateAlpha(const Point2 &uv) const;
+
+    float getAlpha(const Point2i &p) const {
+        if (m_alpha.empty())
+            return 1.0f; // Default to opaque if no alpha loaded
+        // Added () to .y(), .x(), and .x()
+        return m_alpha[p.y() * m_resolution.x() + p.x()];
+    }
 
     /// @brief Loads an image from a file, optionally performing an inverse sRGB
     /// transform when @c isLinearSpace is set to false.
@@ -93,8 +105,7 @@ public:
     void clear() { std::fill(m_data.begin(), m_data.end(), Color()); }
 
     /// @brief Saves the image as an EXR file at a given path.
-    void saveAt(const std::filesystem::path &path,
-                        float norm = 1.f) const;
+    void saveAt(const std::filesystem::path &path, float norm = 1.f) const;
 
     /// @brief Saves the image at its default path, given by the @ref basePath
     /// of this image and its @ref id .

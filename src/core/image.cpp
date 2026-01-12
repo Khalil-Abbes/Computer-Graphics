@@ -1,19 +1,58 @@
 #include <lightwave/core.hpp>
 #include <lightwave/image.hpp>
 #include <lightwave/registry.hpp>
-
+#include <lightwave/texture.hpp>
 #include <stb_image.h>
 #include <tinyexr.h>
 
 namespace lightwave {
 
+float Image::evaluateAlpha(const Point2 &uv) const {
+    // 1. Calculate pixel coordinates
+    // (This logic mirrors existing evaluate function to handle tiling)
+    Point2 pixelCoords = uv;
+    pixelCoords.x()    = pixelCoords.x() * m_resolution.x() - 0.5f;
+    pixelCoords.y()    = (1.0f - pixelCoords.y()) * m_resolution.y() - 0.5f;
+
+    Point2i p00(std::floor(pixelCoords.x()), std::floor(pixelCoords.y()));
+    Point2i p10 = p00 + Vector2i(1, 0);
+    Point2i p01 = p00 + Vector2i(0, 1);
+    Point2i p11 = p00 + Vector2i(1, 1);
+
+    // 2. Calculate interpolation weights
+    float tx = pixelCoords.x() - p00.x();
+    float ty = pixelCoords.y() - p00.y();
+
+    // 3. Fetch alpha values (assuming  getAlpha or access m_alpha
+    // directly) .
+
+    auto getA = [&](const Point2i &p) {
+        int x =
+            (p.x() % m_resolution.x() + m_resolution.x()) % m_resolution.x();
+        int y =
+            (p.y() % m_resolution.y() + m_resolution.y()) % m_resolution.y();
+        return m_alpha[y * m_resolution.x() + x];
+    };
+
+    float a00 = getA(p00);
+    float a10 = getA(p10);
+    float a01 = getA(p01);
+    float a11 = getA(p11);
+
+    // 4. Bilinear Interpolation
+    return (1 - ty) * ((1 - tx) * a00 + tx * a10) +
+           ty * ((1 - tx) * a01 + tx * a11);
+}
+
 void Image::loadImage(const std::filesystem::path &path, bool isLinearSpace) {
     const auto extension = path.extension();
     logger(EInfo, "loading image %s", path);
+
     if (extension == ".exr") {
         // loading of EXR files is handled by TinyEXR
         float *data;
         const char *err;
+        // TinyEXR loads RGBA by default, so 'data' contains 4 floats per pixel
         if (LoadEXR(&data,
                     &m_resolution.x(),
                     &m_resolution.y(),
@@ -23,11 +62,17 @@ void Image::loadImage(const std::filesystem::path &path, bool isLinearSpace) {
         }
 
         m_data.resize(m_resolution.x() * m_resolution.y());
-        auto it = data;
+        m_alpha.resize(m_resolution.x() * m_resolution.y()); // <--- Resize
+                                                             // alpha buffer
+
+        auto it   = data;
+        int index = 0;
         for (auto &pixel : m_data) {
             for (int i = 0; i < pixel.NumComponents; i++)
-                pixel[i] = *it++;
-            it++; // skip alpha channel
+                pixel[i] = *it++; // Read R, G, B
+
+            // CHANGE: Store alpha instead of skipping it
+            m_alpha[index++] = *it++;
         }
         free(data);
     } else {
@@ -35,21 +80,30 @@ void Image::loadImage(const std::filesystem::path &path, bool isLinearSpace) {
         stbi_ldr_to_hdr_gamma(isLinearSpace ? 1.0f : 2.2f);
 
         int numChannels;
-        float *data = stbi_loadf(path.generic_string().c_str(),
-                                 &m_resolution.x(),
-                                 &m_resolution.y(),
-                                 &numChannels,
-                                 3);
+        // CHANGE: Request 4 channels (RGBA) instead of 3
+        float *data =
+            stbi_loadf(path.generic_string().c_str(),
+                       &m_resolution.x(),
+                       &m_resolution.y(),
+                       &numChannels,
+                       4); // <--- Changed 3 to 4 here for alpha masking
         if (data == nullptr) {
             lightwave_throw(
                 "could not load image %s: %s", path, stbi_failure_reason());
         }
 
         m_data.resize(m_resolution.x() * m_resolution.y());
-        auto it = data;
+        m_alpha.resize(m_resolution.x() * m_resolution.y()); // <--- Resize
+                                                             // alpha buffer
+
+        auto it   = data;
+        int index = 0;
         for (auto &pixel : m_data) {
             for (int i = 0; i < pixel.NumComponents; i++)
-                pixel[i] = *it++;
+                pixel[i] = *it++; // Read R, G, B
+
+            // CHANGE: Store the 4th channel (Alpha)
+            m_alpha[index++] = *it++;
         }
         free(data);
     }
@@ -139,7 +193,8 @@ void Image::saveAt(const std::filesystem::path &path, float norm) const {
     // MARK: Save EXR
 
     const char *error;
-    int ret = SaveEXRImageToFile(&image, &header, path.generic_string().c_str(), &error);
+    int ret = SaveEXRImageToFile(
+        &image, &header, path.generic_string().c_str(), &error);
 
     header.num_custom_attributes = 0;
     header.custom_attributes     = nullptr; // memory freed by std::vector

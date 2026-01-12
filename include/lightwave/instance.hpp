@@ -42,6 +42,8 @@ class Instance : public Shape {
     /// @brief Tracks whether this instance has been added to the scene, i.e.,
     /// could be hit by ray tracing.
     bool m_visible;
+    /// @brief The alpha mask texture (can be null for fully opaque objects).
+    ref<Texture> m_alpha;
 
     /// @brief Transforms the frame from object coordinates to world
     /// coordinates.
@@ -53,7 +55,8 @@ public:
         m_bsdf      = properties.getOptionalChild<Bsdf>();
         m_emission  = properties.getOptionalChild<Emission>();
         m_transform = properties.getOptionalChild<Transform>();
-        m_visible = false;
+        m_visible   = false;
+        m_alpha     = properties.getOptional<Texture>("alpha");
     }
 
     /// @brief Returns the shape.
@@ -121,8 +124,7 @@ public:
             indent(m_shape),
             indent(m_bsdf),
             indent(m_emission),
-            indent(m_transform)
-        );
+            indent(m_transform));
     }
 };
 

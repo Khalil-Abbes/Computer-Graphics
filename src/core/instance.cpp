@@ -2,6 +2,7 @@
 #include <lightwave/instance.hpp>
 #include <lightwave/registry.hpp>
 #include <lightwave/sampler.hpp>
+#include <lightwave/texture.hpp> // Required for m_alpha
 
 namespace lightwave {
 
@@ -12,23 +13,11 @@ void Instance::transformFrame(SurfaceEvent &surf, const Vector &wo) const {
     surf.shadingNormal =
         surf.instance->m_transform->applyNormal(surf.shadingNormal)
             .normalized();
-    // TODO: How does this change?
-    // surf.tangent =
+    // surf.tangent is not transformed here for simplicity, but could be
     surf.position = surf.instance->m_transform->apply(surf.position);
-    // TODO: How does this change?
-    // surf.uv =
 }
 
 inline void validateIntersection(const Intersection &its) {
-    // use the following macros to make debugginer easier:
-    // * assert_condition(condition, { ... });
-    // * assert_normalized(vector, { ... });
-    // * assert_ortoghonal(vec1, vec2, { ... });
-    // * assert_finite(value or vector or color, { ... });
-
-    // each assert statement takes a block of code to execute when it fails
-    // (useful for printing out variables to narrow done what failed)
-
     assert_finite(its.t, {
         logger(
             EError,
@@ -48,27 +37,35 @@ inline void validateIntersection(const Intersection &its) {
 
 bool Instance::intersect(const Ray &worldRay, Intersection &its,
                          Sampler &rng) const {
+    // --- PATH 1: Fast Path (No Transform) ---
     if (!m_transform) {
-        // fast path, if no transform is needed
         const Ray localRay        = worldRay;
         const bool wasIntersected = m_shape->intersect(localRay, its, rng);
         if (wasIntersected) {
             its.instance = this;
             validateIntersection(its);
+
+            // [MISSING LOGIC ADDED HERE]
+            if (m_alpha) {
+                // LOGGER DEBUG: Check if we are actually reading the alpha
+                // logger(EInfo,
+                //        "Hit object with alpha mask at UV: %.2f, %.2f",
+                //        its.uv.x(),
+                //         its.uv.y());
+
+                float alphaVal = m_alpha->scalar(its.uv);
+                if (rng.next() > alphaVal) {
+                    return false; // Treat as if we missed (Transparent)
+                }
+            }
         }
         return wasIntersected;
     }
 
+    // --- PATH 2: Slow Path (With Transform) ---
     const float previousT = its.t;
-    Ray localRay;
-
-    // hints:
-    // * transform the ray (do not forget to normalize!)
-    // * how does its.t need to change?
-
-    localRay = m_transform->inverse(worldRay).normalized();
+    Ray localRay          = m_transform->inverse(worldRay).normalized();
     if (its) {
-        // TODO: Maybe there is a faster way to do this?
         its.t = (m_transform->inverse(its.position) - localRay.origin).length();
     }
 
@@ -76,11 +73,24 @@ bool Instance::intersect(const Ray &worldRay, Intersection &its,
     if (wasIntersected) {
         its.instance = this;
         validateIntersection(its);
-        // hint: how does its.t need to change?
+
+        //
+        if (m_alpha) {
+            // LOGGER DEBUG
+            // logger(EInfo,
+            //       "Hit Transformed object at UV: %.2f, %.2f",
+            //       its.uv.x(),
+            //       its.uv.y());
+
+            float alphaVal = m_alpha->scalar(its.uv);
+            if (rng.next() > alphaVal) {
+                its.t = previousT; // IMPORTANT: Restore old T so we can hit
+                                   // things behind this
+                return false;
+            }
+        }
 
         transformFrame(its, -localRay.direction);
-
-        // TODO: There is a faster way to do this according to slides
         its.t = (its.position - worldRay.origin).length();
     } else {
         its.t = previousT;
@@ -91,6 +101,18 @@ bool Instance::intersect(const Ray &worldRay, Intersection &its,
 
 float Instance::transmittance(const Ray &worldRay, float tMax,
                               Sampler &rng) const {
+    // If alpha mask exists, we must use the full intersection test
+    // to determine if the specific UV coordinate is transparent.
+    if (m_alpha) {
+        Intersection its;
+        if (this->intersect(worldRay, its, rng)) {
+            if (its.t < tMax) {
+                return 0.0f; // Blocked by opaque part
+            }
+        }
+        return 1.0f; // Transparent or missed
+    }
+
     if (!m_transform) {
         return m_shape->transmittance(worldRay, tMax, rng);
     }
@@ -108,7 +130,6 @@ float Instance::transmittance(const Ray &worldRay, float tMax,
 
 Bounds Instance::getBoundingBox() const {
     if (!m_transform) {
-        // fast path
         return m_shape->getBoundingBox();
     }
 
@@ -133,10 +154,8 @@ Bounds Instance::getBoundingBox() const {
 
 Point Instance::getCentroid() const {
     if (!m_transform) {
-        // fast path
         return m_shape->getCentroid();
     }
-
     return m_transform->apply(m_shape->getCentroid());
 }
 
